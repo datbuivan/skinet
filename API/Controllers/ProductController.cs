@@ -1,5 +1,10 @@
-﻿using Core.Entities;
+﻿using API.Dtos;
+using API.Errors;
+using API.Helpers;
+using AutoMapper;
+using Core.Entities;
 using Core.Interfaces;
+using Core.Specifications;
 using Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -10,33 +15,50 @@ namespace API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ProductController : ControllerBase
+    public class ProductController : BaseApiController
     {
        
-        private readonly IProductRepository _repo;
-        public ProductController(IProductRepository repo){
-           _repo = repo;
+        private readonly IGenericRepository<Product> _productRepo;
+        IGenericRepository<ProductBrand> _productBrandRepo;
+        IGenericRepository<ProductType> _productTypeRepo;
+        private readonly IMapper _mapper;
+        public ProductController(IGenericRepository<Product> productRepo,
+        IGenericRepository<ProductBrand> productBrandRepo,IGenericRepository<ProductType> productTypeRepo,IMapper mapper){
+          _productRepo = productRepo;
+          _productBrandRepo=productBrandRepo;
+          _productTypeRepo=productTypeRepo;
+          _mapper = mapper;
         }
         [HttpGet]
-        public async Task<ActionResult<List<Product>>> GetProducts(){
-           var products =  await _repo.GetProductsAsync();
-           return Ok(products);
+        public async Task<ActionResult<List<ProductToReturnDto>>> GetProducts([FromQuery]ProductSpecParams productParams){
+           var spec = new ProductsWithTypesAndBrandsSpecification(productParams);
+           var countSpec = new ProductsWithFiltersForCountSpecification(productParams);
+           var totalItems = await _productRepo.CountAsync(countSpec);
+           var products =  await _productRepo.ListAsync(spec);
+           var data = _mapper.Map<IReadOnlyList<ProductToReturnDto>>(products);
+           return Ok(new Pagination<ProductToReturnDto>(productParams.PageIndex, productParams.PageSize,totalItems,data));
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<Product>> GetProduct(int id){
-            var product = await _repo.GetProductByIdAsync(id);
-            return Ok(product);
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<ProductToReturnDto>> GetProduct(int id){
+            var spec = new ProductsWithTypesAndBrandsSpecification(id);
+            var product = await _productRepo.GetEntityWithSpec(spec);
+            if(product == null){
+                return NotFound(new ApiResponse(404));
+            }
+            return _mapper.Map<Product, ProductToReturnDto>(product);
         }
 
         [HttpGet("brands")]
         public async Task<ActionResult<IReadOnlyList<ProductBrand>>> GetProductBrands(){
-            return Ok(await _repo.GetProductBrandsAsync());
+            return Ok(await _productBrandRepo.ListAllAsync());
         }
         
         [HttpGet("types")]
         public async Task<ActionResult<IReadOnlyList<ProductBrand>>> GetProductTypes(){
-            return Ok(await _repo.GetProductTypesAsync());
+            return Ok(await _productTypeRepo.ListAllAsync());
         }
     }
 }
