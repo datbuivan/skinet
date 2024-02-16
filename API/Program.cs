@@ -2,6 +2,10 @@ using API.Middleware;
 using Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using API.Extensions;
+using Infrastructure.Data.Identity;
+using Microsoft.AspNetCore.Identity;
+using Core.Entities.Identity;
+using Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +16,9 @@ builder.Services.AddControllers();
 // builder.Services.AddEndpointsApiExplorer();
 // builder.Services.AddSwaggerGen();
 builder.Services.AddApplicationServices(builder.Configuration);
+builder.Services.AddIdentityServices(builder.Configuration);
+builder.Services.AddSwaggerDocumentation();
+
 // builder.Services.AddDbContext<StoreContext>(options =>
 // {
 //     options.UseSqlServer(builder.Configuration.GetConnectionString("ECommerceConnectstring"));
@@ -35,24 +42,28 @@ builder.Services.AddApplicationServices(builder.Configuration);
 var app = builder.Build();
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseStatusCodePagesWithReExecute("/errors/{0}");
-// Configure the HTTP request pipeline.
-app.UseSwagger();
-app.UseSwaggerUI();
-
+app.UseSwaggerDocumentation();
 app.UseStaticFiles();
 app.UseHttpsRedirection();
 
-app.UseAuthorization();
 app.UseCors("CorsPolicy");
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapControllers();
 using var scope = app.Services.CreateScope();
 var services = scope.ServiceProvider;
 var context = services.GetRequiredService<StoreContext>();
+var identityContext = services.GetRequiredService<AppIdentityDbContext>();
+var userManager = services.GetRequiredService<UserManager<AppUser>>();
+
 var logger = services.GetRequiredService<ILogger<Program>>();
 try
 {
     await context.Database.MigrateAsync();
+    await identityContext.Database.MigrateAsync();
     await StoreContextSeed.SeedAsync(context);
+    await AppIdentityDbContextSeed.SeedUsersAsync(userManager);
 }
 catch (Exception ex)
 {
